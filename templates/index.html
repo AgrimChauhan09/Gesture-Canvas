@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Gesture Canvas</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f0f0f0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .main-container {
+            flex: 1;
+            display: flex;
+            height: calc(100vh - 200px);
+        }
+        
+        .video-section {
+            flex: 1;
+            background: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .canvas-section {
+            flex: 1;
+            background: #fff;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            border-left: 3px solid #ddd;
+        }
+        
+        .video-feed {
+            border: 3px solid #555;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            max-width: 100%;
+            height: auto;
+        }
+        
+        .canvas-feed {
+            border: 3px solid #ddd;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            max-width: 100%;
+            height: auto;
+        }
+        
+        .instructions {
+            position: absolute;
+            top: 120px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            max-width: 350px;
+            z-index: 10;
+        }
+        
+        .instructions h3 {
+            color: #333;
+            margin-top: 0;
+            font-size: 1.2em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .instructions ul {
+            color: #555;
+            line-height: 1.6;
+            padding-left: 20px;
+        }
+        
+        .instructions li {
+            margin: 10px 0;
+        }
+        
+        .instructions strong {
+            color: #333;
+        }
+        
+        .controls {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            flex-wrap: wrap;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
+        }
+        
+        button {
+            padding: 12px 24px;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            border-radius: 25px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            font-size: 1em;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .btn-blue {
+            background: linear-gradient(45deg, #007bff, #0056b3);
+            color: white;
+        }
+        
+        .btn-green {
+            background: linear-gradient(45deg, #28a745, #1e7e34);
+            color: white;
+        }
+        
+        .btn-red {
+            background: linear-gradient(45deg, #dc3545, #bd2130);
+            color: white;
+        }
+        
+        .btn-yellow {
+            background: linear-gradient(45deg, #ffc107, #d39e00);
+            color: black;
+        }
+        
+        .btn-clear {
+            background: linear-gradient(45deg, #6c757d, #495057);
+            color: white;
+        }
+        
+        @media (max-width: 768px) {
+            .main-container {
+                flex-direction: column;
+                height: auto;
+            }
+            
+            .video-section, .canvas-section {
+                flex: none;
+                height: 50vh;
+            }
+            
+            .canvas-section {
+                border-left: none;
+                border-top: 3px solid #ddd;
+            }
+            
+            .instructions {
+                position: static;
+                margin: 20px;
+                max-width: none;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🖐️ Gesture Controlled Canvas</h1>
+    </div>
+    
+    
+    <div class="main-container">
+        <div class="video-section">
+            <img src="{{ url_for('video_feed') }}" class="video-feed" width="640" height="480">
+        </div>
+        
+        <div class="canvas-section">
+            <img src="{{ url_for('canvas_feed') }}" class="canvas-feed" width="640" height="480">
+        </div>
+    </div>
+
+    <div class="controls">
+        <button class="btn-blue" onclick="setColor('blue')">🔵 Blue</button>
+        <button class="btn-green" onclick="setColor('green')">🟢 Green</button>
+        <button class="btn-red" onclick="setColor('red')">🔴 Red</button>
+        <button class="btn-yellow" onclick="setColor('yellow')">🟡 Yellow</button>
+        <button class="btn-clear" onclick="clearCanvas()">🗑️ Clear</button>
+    </div>
+
+    <script>
+        function setColor(color) {
+            fetch(`/color/${color}`);
+        }
+
+        function clearCanvas() {
+            fetch('/clear');
+        }
+    </script>
+</body>
+</html>

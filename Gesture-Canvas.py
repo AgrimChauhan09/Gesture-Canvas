@@ -1,97 +1,214 @@
-# All the imports go here
+from flask import Flask, render_template, Response, request
 import cv2
 import numpy as np
 import mediapipe as mp
 from collections import deque
+import time
 
+app = Flask(__name__)
 
-# Giving different arrays to handle colour points of different colour
+# Initialize drawing points for each color
 bpoints = [deque(maxlen=1024)]
 gpoints = [deque(maxlen=1024)]
 rpoints = [deque(maxlen=1024)]
 ypoints = [deque(maxlen=1024)]
 
+# Initialize indices for each color
+blue_index = green_index = red_index = yellow_index = 0
 
-# These indexes will be used to mark the points in particular arrays of specific colour
-blue_index = 0
-green_index = 0
-red_index = 0
-yellow_index = 0
+# Create kernel for morphological operations
+kernel = np.ones((5,5), np.uint8)
 
-#The kernel to be used for dilation purpose 
-kernel = np.ones((5,5),np.uint8)
-
+# Define colors (BGR format for OpenCV)
 colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (0, 255, 255)]
 colorIndex = 0
 
-# Here is code for Canvas setup
-paintWindow = np.zeros((471,636,3)) + 255
-paintWindow = cv2.rectangle(paintWindow, (40,1), (140,65), (0,0,0), 2)
-paintWindow = cv2.rectangle(paintWindow, (160,1), (255,65), (255,0,0), 2)
-paintWindow = cv2.rectangle(paintWindow, (275,1), (370,65), (0,255,0), 2)
-paintWindow = cv2.rectangle(paintWindow, (390,1), (485,65), (0,0,255), 2)
-paintWindow = cv2.rectangle(paintWindow, (505,1), (600,65), (0,255,255), 2)
+# Create paint window with white background
+paintWindow = np.ones((480, 640, 3), dtype=np.uint8) * 255
 
-cv2.putText(paintWindow, "CLEAR", (49, 33), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2, cv2.LINE_AA)
-cv2.putText(paintWindow, "BLUE", (185, 33), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2, cv2.LINE_AA)
-cv2.putText(paintWindow, "GREEN", (298, 33), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2, cv2.LINE_AA)
-cv2.putText(paintWindow, "RED", (420, 33), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2, cv2.LINE_AA)
-cv2.putText(paintWindow, "YELLOW", (520, 33), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2, cv2.LINE_AA)
-cv2.namedWindow('Paint', cv2.WINDOW_AUTOSIZE)
-
-
-# initialize mediapipe
+# Initialize MediaPipe hands
 mpHands = mp.solutions.hands
-hands = mpHands.Hands(max_num_hands=1, min_detection_confidence=0.7)
+hands = mpHands.Hands(
+    max_num_hands=1,
+    min_detection_confidence=0.7,
+    min_tracking_confidence=0.5
+)
 mpDraw = mp.solutions.drawing_utils
 
-
-# Initialize the webcam
+# Initialize camera
 cap = cv2.VideoCapture(0)
-ret = True
-while ret:
-    # Read each frame from the webcam
-    ret, frame = cap.read()
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-    x, y, c = frame.shape
+def draw_color_palette(frame):
+    """Draw color selection palette on the frame"""
+    # Define color rectangles positions (top of the screen)
+    color_rects = [
+        (10, 10, 60, 60),    # Blue
+        (70, 10, 120, 60),   # Green  
+        (130, 10, 180, 60),  # Red
+        (190, 10, 240, 60),  # Yellow
+        (250, 10, 300, 60)   # Clear (white)
+    ]
+    
+    # Draw color rectangles with their respective colors
+    cv2.rectangle(frame, (color_rects[0][0], color_rects[0][1]), 
+                 (color_rects[0][2], color_rects[0][3]), (255, 0, 0), -1)  # Blue
+    cv2.rectangle(frame, (color_rects[1][0], color_rects[1][1]), 
+                 (color_rects[1][2], color_rects[1][3]), (0, 255, 0), -1)  # Green
+    cv2.rectangle(frame, (color_rects[2][0], color_rects[2][1]), 
+                 (color_rects[2][2], color_rects[2][3]), (0, 0, 255), -1)  # Red
+    cv2.rectangle(frame, (color_rects[3][0], color_rects[3][1]), 
+                 (color_rects[3][2], color_rects[3][3]), (0, 255, 255), -1)  # Yellow
+    cv2.rectangle(frame, (color_rects[4][0], color_rects[4][1]), 
+                 (color_rects[4][2], color_rects[4][3]), (255, 255, 255), -1)  # Clear/White
+    
+    # Add borders to rectangles
+    for rect in color_rects:
+        cv2.rectangle(frame, (rect[0], rect[1]), (rect[2], rect[3]), (0, 0, 0), 2)
+    
+    # Add text labels
+    cv2.putText(frame, 'B', (25, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+    cv2.putText(frame, 'G', (85, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
+    cv2.putText(frame, 'R', (145, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+    cv2.putText(frame, 'Y', (205, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
+    cv2.putText(frame, 'C', (265, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
+    
+    return color_rects
 
-    # Flip the frame vertically
-    frame = cv2.flip(frame, 1)
-    framergb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+def check_color_selection(finger_pos, color_rects):
+    """Check if finger is pointing at a color rectangle"""
+    global colorIndex, bpoints, gpoints, rpoints, ypoints
+    global blue_index, green_index, red_index, yellow_index, paintWindow
+    
+    x, y = finger_pos
+    
+    # Check each color rectangle
+    for i, rect in enumerate(color_rects):
+        if rect[0] <= x <= rect[2] and rect[1] <= y <= rect[3]:
+            if i == 0:  # Blue
+                colorIndex = 0
+                return True
+            elif i == 1:  # Green
+                colorIndex = 1
+                return True
+            elif i == 2:  # Red
+                colorIndex = 2
+                return True
+            elif i == 3:  # Yellow
+                colorIndex = 3
+                return True
+            elif i == 4:  # Clear
+                # Clear the canvas
+                clear_canvas()
+                return True
+    
+    return False
 
-    frame = cv2.rectangle(frame, (40,1), (140,65), (0,0,0), 2)
-    frame = cv2.rectangle(frame, (160,1), (255,65), (255,0,0), 2)
-    frame = cv2.rectangle(frame, (275,1), (370,65), (0,255,0), 2)
-    frame = cv2.rectangle(frame, (390,1), (485,65), (0,0,255), 2)
-    frame = cv2.rectangle(frame, (505,1), (600,65), (0,255,255), 2)
-    cv2.putText(frame, "CLEAR", (49, 33), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2, cv2.LINE_AA)
-    cv2.putText(frame, "BLUE", (185, 33), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2, cv2.LINE_AA)
-    cv2.putText(frame, "GREEN", (298, 33), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2, cv2.LINE_AA)
-    cv2.putText(frame, "RED", (420, 33), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2, cv2.LINE_AA)
-    cv2.putText(frame, "YELLOW", (520, 33), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2, cv2.LINE_AA)
+def clear_canvas():
+    """Clear the drawing canvas"""
+    global bpoints, gpoints, rpoints, ypoints
+    global blue_index, green_index, red_index, yellow_index, paintWindow
+    
+    bpoints = [deque(maxlen=1024)]
+    gpoints = [deque(maxlen=1024)]
+    rpoints = [deque(maxlen=1024)]
+    ypoints = [deque(maxlen=1024)]
+    blue_index = green_index = red_index = yellow_index = 0
+    paintWindow = np.ones((480, 640, 3), dtype=np.uint8) * 255
 
-    # Get hand landmark prediction
-    result = hands.process(framergb)
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-    # post process the result
-    if result.multi_hand_landmarks:
-        landmarks = []
-        for handslms in result.multi_hand_landmarks:
-            for lm in handslms.landmark:
-                lmx = int(lm.x * 640)
-                lmy = int(lm.y * 480)
+@app.route('/color/<color>')
+def set_color(color):
+    global colorIndex
+    colors_map = {'blue': 0, 'green': 1, 'red': 2, 'yellow': 3}
+    colorIndex = colors_map.get(color, 0)
+    return '', 204
 
-                landmarks.append([lmx, lmy])
+@app.route('/clear')
+def clear():
+    clear_canvas()
+    return '', 204
 
+def generate_frames():
+    global blue_index, green_index, red_index, yellow_index
+    color_selection_cooldown = 0  # To prevent rapid color switching
+    
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-            # Drawing landmarks on frames
-            mpDraw.draw_landmarks(frame, handslms, mpHands.HAND_CONNECTIONS)
-        fore_finger = (landmarks[8][0],landmarks[8][1])
-        center = fore_finger
-        thumb = (landmarks[4][0],landmarks[4][1])
-        cv2.circle(frame, center, 3, (0,255,0),-1)
-        print(center[1]-thumb[1])
-        if (thumb[1]-center[1]<30):
+        # Flip frame horizontally for mirror effect
+        frame = cv2.flip(frame, 1)
+        
+        # Convert BGR to RGB for MediaPipe
+        framergb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        result = hands.process(framergb)
+
+        # Draw color palette
+        color_rects = draw_color_palette(frame)
+        
+        # Show current selected color
+        color_names = ['Blue', 'Green', 'Red', 'Yellow']
+        current_color_name = color_names[colorIndex]
+        cv2.putText(frame, f'Current: {current_color_name}', (350, 35), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, colors[colorIndex], 2)
+
+        if result.multi_hand_landmarks:
+            landmarks = []
+            for handlms in result.multi_hand_landmarks:
+                for lm in handlms.landmark:
+                    lmx = int(lm.x * 640)
+                    lmy = int(lm.y * 480)
+                    landmarks.append([lmx, lmy])
+                
+                # Draw hand landmarks
+                mpDraw.draw_landmarks(frame, handlms, mpHands.HAND_CONNECTIONS)
+
+            # Get important landmarks
+            fore_finger = tuple(landmarks[8])  # Index finger tip
+            thumb = tuple(landmarks[4])        # Thumb tip
+            center = fore_finger
+            
+            # Draw a circle at finger tip
+            cv2.circle(frame, center, 5, (0, 255, 0), -1)
+
+            # Check if finger is in color selection area
+            if color_selection_cooldown <= 0:
+                if check_color_selection(center, color_rects):
+                    color_selection_cooldown = 30  # Cooldown to prevent rapid switching
+            else:
+                color_selection_cooldown -= 1
+
+            # Drawing logic (only if not in color selection area)
+            if center[1] > 70:  # Only draw below the color palette area
+                # Calculate distance between thumb and index finger
+                distance = np.sqrt((thumb[0] - center[0])**2 + (thumb[1] - center[1])**2)
+                
+                if distance < 30:  # Fingers close together - lift pen
+                    bpoints.append(deque(maxlen=512))
+                    blue_index += 1
+                    gpoints.append(deque(maxlen=512))
+                    green_index += 1
+                    rpoints.append(deque(maxlen=512))
+                    red_index += 1
+                    ypoints.append(deque(maxlen=512))
+                    yellow_index += 1
+                else:  # Fingers apart - draw
+                    if colorIndex == 0:
+                        bpoints[blue_index].appendleft(center)
+                    elif colorIndex == 1:
+                        gpoints[green_index].appendleft(center)
+                    elif colorIndex == 2:
+                        rpoints[red_index].appendleft(center)
+                    elif colorIndex == 3:
+                        ypoints[yellow_index].appendleft(center)
+        else:
+            # No hand detected - lift pen
             bpoints.append(deque(maxlen=512))
             blue_index += 1
             gpoints.append(deque(maxlen=512))
@@ -101,63 +218,42 @@ while ret:
             ypoints.append(deque(maxlen=512))
             yellow_index += 1
 
-        elif center[1] <= 65:
-            if 40 <= center[0] <= 140: # Clear Button
-                bpoints = [deque(maxlen=512)]
-                gpoints = [deque(maxlen=512)]
-                rpoints = [deque(maxlen=512)]
-                ypoints = [deque(maxlen=512)]
+        # Draw lines on both frame and paint window
+        points = [bpoints, gpoints, rpoints, ypoints]
+        for i in range(len(points)):
+            for j in range(len(points[i])):
+                for k in range(1, len(points[i][j])):
+                    if points[i][j][k - 1] is None or points[i][j][k] is None:
+                        continue
+                    cv2.line(frame, points[i][j][k - 1], points[i][j][k], colors[i], 3)
+                    cv2.line(paintWindow, points[i][j][k - 1], points[i][j][k], colors[i], 3)
 
-                blue_index = 0
-                green_index = 0
-                red_index = 0
-                yellow_index = 0
+        # Encode frame as JPEG
+        _, buffer = cv2.imencode('.jpg', frame)
+        frame = buffer.tobytes()
+        yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
-                paintWindow[67:,:,:] = 255
-            elif 160 <= center[0] <= 255:
-                    colorIndex = 0 # Blue
-            elif 275 <= center[0] <= 370:
-                    colorIndex = 1 # Green
-            elif 390 <= center[0] <= 485:
-                    colorIndex = 2 # Red
-            elif 505 <= center[0] <= 600:
-                    colorIndex = 3 # Yellow
-        else :
-            if colorIndex == 0:
-                bpoints[blue_index].appendleft(center)
-            elif colorIndex == 1:
-                gpoints[green_index].appendleft(center)
-            elif colorIndex == 2:
-                rpoints[red_index].appendleft(center)
-            elif colorIndex == 3:
-                ypoints[yellow_index].appendleft(center)
-    # Append the next deques when nothing is detected to avois messing up
-    else:
-        bpoints.append(deque(maxlen=512))
-        blue_index += 1
-        gpoints.append(deque(maxlen=512))
-        green_index += 1
-        rpoints.append(deque(maxlen=512))
-        red_index += 1
-        ypoints.append(deque(maxlen=512))
-        yellow_index += 1
+@app.route('/video_feed')
+def video_feed():
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-    # Draw lines of all the colors on the canvas and frame
-    points = [bpoints, gpoints, rpoints, ypoints]
-    for i in range(len(points)):
-        for j in range(len(points[i])):
-            for k in range(1, len(points[i][j])):
-                if points[i][j][k - 1] is None or points[i][j][k] is None:
-                    continue
-                cv2.line(frame, points[i][j][k - 1], points[i][j][k], colors[i], 2)
-                cv2.line(paintWindow, points[i][j][k - 1], points[i][j][k], colors[i], 2)
+@app.route('/canvas_feed')
+def canvas_feed():
+    """Stream the drawing canvas"""
+    def generate_canvas():
+        while True:
+            # Create a copy of the paint window
+            canvas = paintWindow.copy()
+            
+            # Add a subtle border
+            cv2.rectangle(canvas, (0, 0), (639, 479), (200, 200, 200), 2)
+            
+            # Encode and yield the canvas
+            _, buffer = cv2.imencode('.jpg', canvas)
+            canvas_bytes = buffer.tobytes()
+            yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + canvas_bytes + b'\r\n')
+    
+    return Response(generate_canvas(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-    cv2.imshow("Output", frame) 
-    cv2.imshow("Paint", paintWindow)
-
-    if cv2.waitKey(1) == ord('q'):
-        break
-
-# release the webcam and destroy all active windows
-cap.release()
-cv2.destroyAllWindows()
+if __name__ == '__main__':
+    app.run(debug=True, threaded=True)
